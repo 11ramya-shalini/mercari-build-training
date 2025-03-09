@@ -74,7 +74,7 @@ class AddItemResponse(BaseModel):
 
 # add_item is a handler to add a new item for POST /items .
 @app.post("/items", response_model=AddItemResponse)
-async def add_item(item, db):
+async def add_item(
     name: str = Form(...),
     category: str = Form(...),
     image: UploadFile = File(...),
@@ -153,8 +153,6 @@ def insert_item(item: Item):
     except Exception as e:
         logger.error(f"Failed to save item: {e}")
         raise HTTPException(status_code=500, detail="Failed to save item")
-
-
 
 @app.get("/items")
 def get_items():
