@@ -172,7 +172,7 @@ def get_items():
 
 
 @app.get("/items/{item_id}")
-def get_item(item_id: int):
+def get_item_id(item_id: int):
     try:
         if not JSON_DB.exists():
             raise HTTPException(status_code=404, detail="Item not found")
