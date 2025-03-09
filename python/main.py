@@ -73,7 +73,7 @@ class AddItemResponse(BaseModel):
 async def add_item(
     name: str = Form(...),
     category: str = Form(...),
-    category: str = Form(...),
+    image: UploadFile = File(...),
     db: sqlite3.Connection = Depends(get_db),
 ):
     if not name:
