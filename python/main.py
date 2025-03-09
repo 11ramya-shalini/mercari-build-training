@@ -5,7 +5,8 @@ from fastapi import FastAPI, Form, HTTPException, Depends, File, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import sqlite3
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import Optional
 from contextlib import asynccontextmanager
 import json
 import hashlib
@@ -14,14 +15,14 @@ import hashlib
 # Define the path to the images & sqlite3 database
 images = pathlib.Path(__file__).parent.resolve() / "images"
 db = pathlib.Path(__file__).parent.resolve() / "db" / "mercari.sqlite3"
-JSON_DB = pathlib.Path(__file__).parent.resolve() / "db" / "items.json"
+SQL_DB = pathlib.Path(__file__).parent.resolve() / "db" / "items.sql"
 
 
 def get_db():
     if not db.exists():
-        yield
+        setup_database()
 
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(db, check_same_thread=False )
     conn.row_factory = sqlite3.Row  # Return rows as dictionaries
     try:
         yield conn
@@ -31,7 +32,12 @@ def get_db():
 
 # STEP 5-1: set up the database connection
 def setup_database():
-    pass
+  conn = sqlite3.connect(db)
+    with open(SQL_DB, "r", encoding="utf-8") as f:
+        conn.executescript(f.read())
+    conn.commit()
+    conn.close()
+    logger.info("Database initialized successfully.")  
 
 
 @asynccontextmanager
@@ -88,7 +94,7 @@ async def add_item(
         f.write(image_bytes)
 
     item = Item(name=name, category=category, image_name=image_filename)
-    insert_item(item)
+    insert_item(item, db)
     
     return {"message": f"item received: {name}"}
 
@@ -110,83 +116,103 @@ async def get_image(image_name):
 
 
 class Item(BaseModel):
+    id: Optional[int] = Field(None, description="Auto-generated ID")
     name: str
     category: str
     image_name: str
 
-DEFAULT_JSON_DATA = {"items": []}
 
 def insert_item(item: Item):
     # STEP 4-2: add an implementation to store an item
     try:
-        if not JSON_DB.exists():
-            with open(JSON_DB, "w", encoding="utf-8") as f:
-                json.dump(DEFAULT_JSON_DATA, f, indent=2)
+        cursor = db.cursor()
+        cursor.execute("SELECT id FROM categories WHERE name = ?", (item.category,))
+        category_row = cursor.fetchone()
+        
+        if category_row is None:
+            cursor.execute("INSERT INTO categories (name) VALUES (?)", (item.category,))
+            db.commit()  
+            category_id = cursor.lastrowid
+        else:
+            category_id = category_row["id"]
 
-        with open(JSON_DB, "r+", encoding="utf-8") as f:
-            content = f.read().strip()
-            data = json.loads(content) if content else DEFAULT_JSON_DATA
-            logger.info("Succeeded to open json file")
+        cursor.execute("SELECT id FROM items WHERE name = ?", (item.name,))
+        existing_item = cursor.fetchone()
 
-            if "items" not in data:
-                data["items"] = []
+        if existing_item:
+            logger.info(f"Item already exists: {existing_item}")
+            raise HTTPException(status_code=400, detail="Item already exists")
 
-            existing_item = next((i for i in data["items"] if i["name"] == item.name), None)
-
-            if existing_item:
-                logger.info(f"Item already exists, updating image_name: {existing_item}")
-                existing_item["image_name"] = item["image_name"]
-            else:
-                new_item = item.dict()
-                data["items"].append(new_item)
-                logger.info(f"New item inserted: {new_item}")
-
-            f.seek(0)
-            json.dump(data, f, indent=2, ensure_ascii=False)
-            f.truncate()
+        cursor.execute(
+            "INSERT INTO items (name, category_id, image_name) VALUES (?, ?, ?)",
+            (item.name, category_id, item.image_name),
+        )
+        db.commit()
+        logger.info(f"New item inserted: {item.dict()}")
 
     except Exception as e:
+        db.rollback()
         logger.error(f"Failed to save item: {e}")
         raise HTTPException(status_code=500, detail="Failed to save item")
 
 
 
 @app.get("/items")
-def get_items():
+def get_items(db: sqlite3.Connection = Depends(get_db)):
     try:
-        if not JSON_DB.exists():
-            raise HTTPException(status_code=404, detail="Item not found")
+        cursor = db.cursor()
+        cursor.execute("""
+            SELECT items.id, items.name, categories.name AS category_name, items.image_name
+            FROM items
+            JOIN categories ON items.category_id = categories.id
+        """)
+        items = cursor.fetchall()
 
-        with open(JSON_DB, "r", encoding="utf-8") as f:
-            content = f.read().strip()
-            data = json.loads(content) if content else DEFAULT_JSON_DATA
-
-        return {"items": data.get("items", [])}
-
+        return {"items": [dict(row) for row in items]}
     except Exception as e:
         logger.error(f"Failed to get items: {e}")
         raise HTTPException(status_code=500, detail="Failed to get items")
 
 
 @app.get("/items/{item_id}")
-def get_item(item_id: int):
+def get_item(item_id: int, db: sqlite3.Connection = Depends(get_db)):
     try:
-        if not JSON_DB.exists():
+        cursor = db.cursor()
+        cursor.execute("""
+            SELECT items.id, items.name, categories.name AS category_name, items.image_name
+            FROM items
+            JOIN categories ON items.category_id = categories.id
+            WHERE items.id = ?
+        """, (item_id,))
+        item = cursor.fetchone()
+
+        if item is None:
             raise HTTPException(status_code=404, detail="Item not found")
 
-        with open(JSON_DB, "r", encoding="utf-8") as f:
-            content = f.read().strip()
-            data = json.loads(content) if content else DEFAULT_JSON_DATA
-
-        items = data.get("items", [])
-
-        if item_id < 1 or item_id > len(items):
-            raise HTTPException(status_code=404, detail="Item not found")
-
-        return items[item_id - 1]
-
+        return dict(item)
     except Exception as e:
         logger.error(f"Failed to get item {item_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to get item")
-    
-    
+
+
+@app.get("/search")
+def search_items(keyword: str = Query(..., min_length=1), db: sqlite3.Connection = Depends(get_db)):
+    try:
+        cursor = db.cursor()
+        cursor.execute("""
+            SELECT items.name, categories.name AS category_name, items.image_name
+            FROM items
+            JOIN categories ON items.category_id = categories.id
+            WHERE items.name LIKE ? OR categories.name LIKE ?
+        """, (f"%{keyword}%", f"%{keyword}%"))
+        items = cursor.fetchall()
+
+        return {
+            "items": [
+                {"name": row["name"], "category": row["category_name"], "image_name": row["image_name"]}
+                for row in items
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Failed to search items: {e}")
+        raise HTTPException(status_code=500, detail="Failed to search items")
