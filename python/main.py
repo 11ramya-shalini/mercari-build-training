@@ -145,8 +145,16 @@ def get_item_by_id(item_id):
     all_data = read_from_json()
     item = all_data["items"][item_id_int - 1]
     return item 
-##############    
+############## 
 
+######### for STEP 5-2
+@app.get("/search")
+def search_items(keyword: str, db: sqlite3.Connection = Depends(get_db)):
+    cursor = db.cursor
+    cursor.execute("SELECT * FROM items WHERE name LIKE ?", ('%' + keyword + '%',))
+    items = cursor.fetchall()
+    return {"items": [{"name": item["name"], "category": item["category"], "image_name": item["image_name"]} for item in items]}
+############
 
 # get_image is a handler to return an image for GET /images/{filename} .
 @app.get("/image/{image_name}")
