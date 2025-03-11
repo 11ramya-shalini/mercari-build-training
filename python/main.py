@@ -42,7 +42,25 @@ def read_from_json():
 def write_from_json(data):
     with open(items_file, 'w') as f:
         json.dump(data, f, indent=4)
-#############   
+############# 
+
+##### for STEP 4-3
+def hash_image(image_file: UploadFile):
+    try:
+        # read image from image_file
+        image = image_file.file.read()
+        # hash the image
+        hash_value = hashlib.sha256(image).hexdigest()
+        hashed_image_name = f"{hash_value}.jpg"
+        hashed_image_path = images / hashed_image_name
+        
+        with open(hashed_image_path, 'wb') as f:
+            f.write(image)
+        return hashed_image_name
+
+    except Exception as e:
+        raise RuntimeError(f"An unexpected error occurred: {e}")    
+#############
 
 # STEP 5-1: set up the database connection
 def setup_database():
@@ -91,18 +109,29 @@ async def add_item(
     image: UploadFile = File(...),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    if not name or not category:
-        raise HTTPException(status_code=400, detail="name, category, and image iare required")
+    if not name or not category or not image:
+        raise HTTPException(status_code=400, detail="name, category, and image are required")
     
-    insert_item(Item(name=name, category=category)
+    hashed_image = hash_image(image)
+    
+    insert_item(Item(name=name, category=category, image=hashed_image))
     return AddItemResponse(**{"message": f"item received: {name}"})
 
  ###### for STEP 4-3   
- @app.get("/items")
- def get_items():
+@app.get("/items")
+def get_items():
     all_data = read_from_json() 
     return all_data 
-##########    
+########## 
+
+####### for STEP 4-5
+@app.get("/items/{item_id}")
+def get_item_by_id(item_id):
+    item_id_int = int(item_id)
+    all_data = read_from_json()
+    item = all_data["items"][item_id_int - 1]
+    return item 
+##############    
 
 
 # get_image is a handler to return an image for GET /images/{filename} .
@@ -124,12 +153,13 @@ async def get_image(image_name):
 class Item(BaseModel):
     name: str
     category: str
-    image_name: str
+    image : str
 
 
 
 def insert_item(item: Item):
     # STEP 4-2: add an implementation to store an item
     handy = read_from_json()
+    handy["items"].append({"name": item.name, "category": item.category, "image_name": item.image})
     write_from_json(handy)
     
