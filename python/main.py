@@ -16,7 +16,7 @@ import hashlib
 images = pathlib.Path(__file__).parent.resolve() / "images"
 items_file = pathlib.Path(__file__).parent.resolve() / "items.json"
 db = pathlib.Path(__file__).parent.resolve() / "db" / "mercari.sqlite3"
-#SQL_DB = pathlib.Path(__file__).parent.resolve()
+SQL_File = pathlib.Path(__file__).parent.resolve() / "db" / "items.sql"
 
 def get_db():
     if not db.exists():
@@ -64,7 +64,13 @@ def hash_image(image_file: UploadFile):
 
 # STEP 5-1: set up the database connection
 def setup_database():
-    pass 
+    conn = sqlite3.connect(db)
+    cursor = conn.cursor()
+    if SQL_File.exists():
+        with open(SQL_File, 'r') as f:
+            cursor.executescript(f.read())
+    conn.commit()
+    conn.close()        
 
 
 @asynccontextmanager
@@ -113,15 +119,23 @@ async def add_item(
         raise HTTPException(status_code=400, detail="name, category, and image are required")
     
     hashed_image = hash_image(image)
+
+    ####### for STEP 5-1
+    cursor = db.cursor()
+    cursor.execute("INSERT INTO items (name, category, image_name) VALUES (?, ?, ?)", (name, category, image_name))
+    db.commit()
     
     insert_item(Item(name=name, category=category, image=hashed_image))
     return AddItemResponse(**{"message": f"item received: {name}"})
 
- ###### for STEP 4-3   
+ ###### for STEP 4-3   ##### modifying for STEP 5-1
 @app.get("/items")
-def get_items():
-    all_data = read_from_json() 
-    return all_data 
+def get_items(db: sqlite3.Connection = Depends(get_db)):
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM items")
+    items = cursor.fetchall()
+    return [{"name": item["name"], "category": item["category"], "image_name": item["image_name"]} for item in items]
+
 ########## 
 
 ####### for STEP 4-5
@@ -151,6 +165,7 @@ async def get_image(image_name):
 
 
 class Item(BaseModel):
+    id: str
     name: str
     category: str
     image : str
