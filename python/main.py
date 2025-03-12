@@ -6,10 +6,11 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import sqlite3
 from pydantic import BaseModel, Field
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 import json
 import hashlib
-from typing import Dict, List
+from typing import Dict, List, Optional
+import threading
 
 
 # Define the path to the images & sqlite3 database
@@ -18,16 +19,19 @@ items_file = pathlib.Path(__file__).parent.resolve() / "items.json"
 db = pathlib.Path(__file__).parent.resolve() / "db" / "mercari.sqlite3"
 SQL_File = pathlib.Path(__file__).parent.resolve() / "db" / "items.sql"
 
+local_db = threading.local()
+@contextmanager
 def get_db():
-    if not db.exists():
-         yield
-
-    conn = sqlite3.connect(db, check_same_thread=False )
-    conn.row_factory = sqlite3.Row  # Return rows as dictionaries
+    if not os.path.exists(db):
+        raise FileNotFoundError(f"Database file {db} does not exist.")
+    if not hasattr(local_db, "conn"):
+        local_db.conn = sqlite3.connect(db, check_same_thread=False )
+        local_db.conn.row_factory = sqlite3.Row  # Return rows as dictionaries
+         
     try:
-        yield conn
+        yield local_db.conn    
     finally:
-        conn.close()
+        pass
 
 ##### for STEP 4-1
 # Function to read the items from the JSON file
@@ -92,7 +96,8 @@ def get_items_from_db(db: sqlite3.Connection):
     except Exception as e:
         return {f"An unexpected error occurred: {e}"}
     finally:
-        cursor.close()
+        pass
+       # cursor.close()
 ###############
 
 ######## for STEP 5
@@ -115,7 +120,8 @@ def get_items_from_db_by_id(id: int, db: sqlite3.Connection)-> Dict[str, List[Di
         return {f"An unexpected error occurred: {e}"}
     
     finally:
-        cursor.close()
+        pass
+        #cursor.close()
 ###########  
 
 
@@ -166,7 +172,7 @@ async def add_item(
     
     hashed_image = hash_image(image)
 
-    insert_item_by_db(Item(name=name, category=category, image=hashed_image))
+    insert_item_by_db(Item(name=name, category=category, image=hashed_image), db)
     return AddItemResponse(**{"message": f"item received: {name}, {category}, {hashed_filename}"})
 
  ###### modifying for STEP 5-1
@@ -205,7 +211,8 @@ def search_items_by_keyword(keyword: str, db: sqlite3.Connection = Depends(get_d
         raise HTTPException(status_code=500, detail=f"Error: {e}")
 
     finally:
-        cursor.close()
+        pass
+        #cursor.close()
 ############
 
 
@@ -226,7 +233,7 @@ async def get_image(image_name):
 
 
 class Item(BaseModel):
-    id: str
+    id: Optional[int] = None
     name: str
     category: str
     image : str
@@ -234,24 +241,30 @@ class Item(BaseModel):
 
 
 def insert_item_by_db(item: Item, db: sqlite3.Connection) -> int:
-    cursor = db.cursor()
-    query_category = "SELECT id FROM categories WHERE name = ?"
-    cursor.execute(query_category, (item.category,))
-    rows = cursor.fetchone()
-    if rows is None:
-        insert_query_category = "INSERT INTO categories (name) VALUES (?)"
-        cursor.execute(insert_query_category, (item.category,))
-        category_id = cursor.lastrowid
-    else:
-        category_id = rows[0]
+    cursor = None
+    try:
+        cursor = db.cursor()
+        query_category = "SELECT id FROM categories WHERE name = ?"
+        cursor.execute(query_category, (item.category,))
+        rows = cursor.fetchone()
+        if rows is None:
+            insert_query_category = "INSERT INTO categories (name) VALUES (?)"
+            cursor.execute(insert_query_category, (item.category,))
+            category_id = cursor.lastrowid
+        else:
+            category_id = rows[0]
+            
+        query = """
+        INSERT INTO items (name, category_id, image_name) VALUES (?, ?, ?)
+        """
+        cursor.execute(query, (item.name, category_id, item.image))
 
-    query = """
-INSERT INTO items (name, category_id, image_name) VALUES (?, ?, ?)
-"""
-    cursor.execute(query, (item.name, category_id, item.image))
-
-    db.commit()
-
-    cursor.close()
+        db.commit()
+    except sqlite3.DatabaseError as e:
+        db.rollback() 
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+    finally:
+        if cursor:
+            cursor.close()
  
     
