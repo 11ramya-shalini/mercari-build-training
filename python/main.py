@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from contextlib import asynccontextmanager
 import json
 import hashlib
-#from typing import Optional
+from typing import Dict, List
 
 
 # Define the path to the images & sqlite3 database
@@ -31,7 +31,7 @@ def get_db():
 
 ##### for STEP 4-1
 # Function to read the items from the JSON file
-def read_from_json():
+'''def read_from_json():
     if not os.path.exists(items_file):
         with open(items_file, 'r') as f:
             json.dump({"items": []},f)
@@ -41,7 +41,7 @@ def read_from_json():
 # Function to save items to the JSON file
 def write_from_json(data):
     with open(items_file, 'w') as f:
-        json.dump(data, f, indent=4)
+        json.dump(data, f, indent=4)'''
 ############# 
 
 ##### for STEP 4-3
@@ -70,7 +70,53 @@ def setup_database():
         with open(SQL_File, 'r') as f:
             cursor.executescript(f.read())
     conn.commit()
-    conn.close()        
+    conn.close()     
+
+######### FOR STEP 5
+def get_items_from_db(db: sqlite3.Connection):
+    try:
+        cursor = db.cursor()
+        query = """
+        SELECT items.name, categories.name AS category, image_name
+        FROM items
+        JOIN categories
+        ON category_id = categories.id
+        """
+        cursor.execute(query)
+        rows = cursor.fetchall()
+        items_list = [{"name": name, "category":category, "image_name": image_name} for name, category, image_name in rows]
+        result = {"items": items_list}
+
+        return result
+
+    except Exception as e:
+        return {f"An unexpected error occurred: {e}"}
+    finally:
+        cursor.close()
+###############
+
+######## for STEP 5
+def get_items_from_db_by_id(id: int, db: sqlite3.Connection)-> Dict[str, List[Dict[str, str]]]:
+    try:
+        cursor = db.cursor()
+        query = """
+        SELECT items.id, items.name, categories.name AS category, items.image_name
+        FROM items
+        JOIN categories
+        ON items.category_id = categories.id
+        """
+        cursor.execute(query, (id,))
+        rows = cursor.fetchone()
+        
+        item = [{"id": row[0], "name": row[1], "category": row[2], "image_name": row[3]}]
+        return {"items": item}
+
+    except Exception as e:
+        return {f"An unexpected error occurred: {e}"}
+    
+    finally:
+        cursor.close()
+###########  
 
 
 @asynccontextmanager
@@ -120,41 +166,48 @@ async def add_item(
     
     hashed_image = hash_image(image)
 
-    ####### for STEP 5-1
-    cursor = db.cursor()
-    cursor.execute("INSERT INTO items (name, category, image_name) VALUES (?, ?, ?)", (name, category, image_name))
-    db.commit()
-    
-    insert_item(Item(name=name, category=category, image=hashed_image))
-    return AddItemResponse(**{"message": f"item received: {name}"})
+    insert_item_by_db(Item(name=name, category=category, image=hashed_image))
+    return AddItemResponse(**{"message": f"item received: {name}, {category}, {hashed_filename}"})
 
- ###### for STEP 4-3   ##### modifying for STEP 5-1
+ ###### modifying for STEP 5-1
 @app.get("/items")
 def get_items(db: sqlite3.Connection = Depends(get_db)):
-    cursor = db.cursor()
-    cursor.execute("SELECT * FROM items")
-    items = cursor.fetchall()
-    return [{"name": item["name"], "category": item["category"], "image_name": item["image_name"]} for item in items]
-
+    all_data = get_items_from_db(db)
+    return all_data
 ########## 
 
-####### for STEP 4-5
+####### modified for STEP 5   
 @app.get("/items/{item_id}")
 def get_item_by_id(item_id):
     item_id_int = int(item_id)
-    all_data = read_from_json()
-    item = all_data["items"][item_id_int - 1]
-    return item 
+    all_data = get_items_from_db_by_id()
+    item = all_data["items"] [item_id_int -1]
+    return item
 ############## 
 
 ######### for STEP 5-2
 @app.get("/search")
-def search_items(keyword: str, db: sqlite3.Connection = Depends(get_db)):
-    cursor = db.cursor
-    cursor.execute("SELECT * FROM items WHERE name LIKE ?", ('%' + keyword + '%',))
-    items = cursor.fetchall()
-    return {"items": [{"name": item["name"], "category": item["category"], "image_name": item["image_name"]} for item in items]}
+def search_items_by_keyword(keyword: str, db: sqlite3.Connection = Depends(get_db)):
+    try:
+        cursor = db.cursor()
+        query = """
+        SELECT name, category, image_name
+        FROM items
+        WHERE name LIKE ?
+        """
+        pattern = f"%{keyword}%"
+        cursor.execute(query, (pattern,))
+        rows = cursor.fetchall()
+        items_list =  [{"name": name, "category":category, "image_name": image_name} for name, category, image_name in rows]
+        return  {"items": items_list}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {e}")
+
+    finally:
+        cursor.close()
 ############
+
 
 # get_image is a handler to return an image for GET /images/{filename} .
 @app.get("/image/{image_name}")
@@ -180,9 +233,25 @@ class Item(BaseModel):
 
 
 
-def insert_item(item: Item):
-    # STEP 4-2: add an implementation to store an item
-    handy = read_from_json()
-    handy["items"].append({"name": item.name, "category": item.category, "image_name": item.image})
-    write_from_json(handy)
+def insert_item_by_db(item: Item, db: sqlite3.Connection) -> int:
+    cursor = db.cursor()
+    query_category = "SELECT id FROM categories WHERE name = ?"
+    cursor.execute(query_category, (item.category,))
+    rows = cursor.fetchone()
+    if rows is None:
+        insert_query_category = "INSERT INTO categories (name) VALUES (?)"
+        cursor.execute(insert_query_category, (item.category,))
+        category_id = cursor.lastrowid
+    else:
+        category_id = rows[0]
+
+    query = """
+INSERT INTO items (name, category_id, image_name) VALUES (?, ?, ?)
+"""
+    cursor.execute(query, (item.name, category_id, item.image))
+
+    db.commit()
+
+    cursor.close()
+ 
     
