@@ -1,16 +1,16 @@
 import os
 import logging
 import pathlib
-from fastapi import FastAPI, Form, HTTPException, Depends, File, UploadFile
+from fastapi import FastAPI, Form, HTTPException, Depends, File, UploadFile, Path
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import sqlite3
 from pydantic import BaseModel, Field
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 import json
 import hashlib
-from typing import Dict, List
-
+from typing import Dict, List, Optional
+import threading
 
 # Define the path to the images & sqlite3 database
 images = pathlib.Path(__file__).parent.resolve() / "images"
@@ -18,16 +18,19 @@ items_file = pathlib.Path(__file__).parent.resolve() / "items.json"
 db = pathlib.Path(__file__).parent.resolve() / "db" / "mercari.sqlite3"
 SQL_File = pathlib.Path(__file__).parent.resolve() / "db" / "items.sql"
 
+thread_local = threading.local()
+db_path = "db/test_mercari.sqlite3"
+@contextmanager
 def get_db():
-    if not db.exists():
-         yield
+    if not hasattr(thread_local, 'conn'):
+        thread_local.conn = sqlite3.connect(db_path, check_same_thread=True)
+        thread_local.conn.row_factory = sqlite3.Row  # Return rows as dictionaries
 
-    conn = sqlite3.connect(db, check_same_thread=False )
-    conn.row_factory = sqlite3.Row  # Return rows as dictionaries
+    conn = thread_local.conn
     try:
-        yield conn
+        yield conn    
     finally:
-        conn.close()
+        pass
 
 ##### for STEP 4-1
 # Function to read the items from the JSON file
@@ -166,7 +169,7 @@ async def add_item(
     
     hashed_image = hash_image(image)
 
-    insert_item_by_db(Item(name=name, category=category, image=hashed_image))
+    insert_item_by_db(Item(name=name, category=category, image=hashed_image), db)
     return AddItemResponse(**{"message": f"item received: {name}, {category}, {hashed_filename}"})
 
  ###### modifying for STEP 5-1
@@ -178,7 +181,7 @@ def get_items(db: sqlite3.Connection = Depends(get_db)):
 
 ####### modified for STEP 5   
 @app.get("/items/{item_id}")
-def get_item_by_id(item_id):
+def get_item_by_id(item_id, db: sqlite3.Connection = Depends(get_db)):
     item_id_int = int(item_id)
     all_data = get_items_from_db_by_id()
     item = all_data["items"] [item_id_int -1]
@@ -226,7 +229,7 @@ async def get_image(image_name):
 
 
 class Item(BaseModel):
-    id: str
+    id: Optional[str] = None 
     name: str
     category: str
     image : str
@@ -253,5 +256,3 @@ INSERT INTO items (name, category_id, image_name) VALUES (?, ?, ?)
     db.commit()
 
     cursor.close()
- 
-    
