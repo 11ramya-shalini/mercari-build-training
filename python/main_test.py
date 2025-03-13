@@ -79,6 +79,7 @@ def test_hello(want_status_code, want_body):
 
 
 #STEP 6-4: uncomment this test
+
 @pytest.mark.parametrize(
     "args, want_status_code",
     [
@@ -87,31 +88,29 @@ def test_hello(want_status_code, want_body):
     ],
 )
 def test_add_item_e2e(args,want_status_code,db_connection):
-    image_file = io.BytesIO(b"fake image content")
-    image_file.name = "fake_image.jpg"
 
-    response = client.post(
-        "/items/",
-        data={
-            "name": args["name"],
-            "category": args["category"],
-        },
-        files={"image": ("fake_image.jpg", image_file, "image/jpeg")},
-    )
-    #response = client.post("/items/", data=args)
-    assert response.status_code == want_status_code
+    with open("images/default.jpg", "rb") as f:
+        files = {"image": ("default.jpg", f)} 
     
-    if want_status_code >= 400:
-        return
+        response = client.post("/items/", data=args, files=files)
+        
+        assert response.status_code == want_status_code
+    
+        if want_status_code >= 400:
+            return
     
     
-    # Check if the response body is correct
-    response_data = response.json()
-    assert "message" in response_data,f"unexpected result of est_add_item_e2e:want=the string of [message],got={response_data}"
+        # Check if the response body is correct
+        response_data = response.json()
+        assert "message" in response_data
 
-    # Check if the data was saved to the database correctly
-    cursor = db_connection.cursor()
-    cursor.execute("SELECT * FROM items WHERE name = ?", (args["name"],))
-    db_item = cursor.fetchone()
-    assert db_item is not None,"unexpected result of est_add_item_e2e:nothing saved to the database"
-    assert dict(db_item)["name"] == args["name"],f"unexpected result of est_add_item_e2e:do not saved to the database {name}"
+        # Check if the data was saved to the database correctly
+        cursor = db_connection.cursor()
+        cursor.execute("SELECT * FROM items WHERE name = ?", (args["name"],))
+        db_item = cursor.fetchone()
+        assert db_item is not None
+        assert dict(db_item)["name"] == args["name"]
+        # Check if the category was saved to the database correctly
+        cursor.execute("SELECT id FROM categories WHERE name = ?", (args["category"],))
+        db_category_id = cursor.fetchone()[0]
+        assert dict(db_item)["category_id"] == db_category_id
