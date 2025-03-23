@@ -241,8 +241,13 @@ def search_items_by_keyword(keyword: str, db: sqlite3.Connection = Depends(get_d
 
 
 # get_image is a handler to return an image for GET /images/{filename} .
+<<<<<<< HEAD
 @app.get("/image/{image_name}")
 async def get_image(image_name: str):
+=======
+@app.get("/images/{image_name}")
+async def get_image(image_name):
+>>>>>>> 69c4d1d6121e0f7a0701680b670773c4478aa577
     # Create image path
     image = images / image_name
 
