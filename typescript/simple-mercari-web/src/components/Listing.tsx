@@ -21,7 +21,7 @@ export const Listing = ({ onListingCompleted }: Prop) => {
 
   const uploadImageRef = useRef<HTMLInputElement>(null);
 
-  const onValueChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const onValueChange = (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setValues({
       ...values,
       [event.target.name]: event.target.value,
@@ -37,7 +37,7 @@ export const Listing = ({ onListingCompleted }: Prop) => {
     event.preventDefault();
 
     // Validate field before submit
-    const REQUIRED_FILEDS = ['name', 'image'];
+    const REQUIRED_FILEDS = ['name', 'image', 'category'];
     const missingFields = Object.entries(values)
       .filter(([, value]) => !value && REQUIRED_FILEDS.includes(value))
       .map(([key]) => key);
@@ -81,14 +81,22 @@ export const Listing = ({ onListingCompleted }: Prop) => {
             required
             value={values.name}
           />
-          <input
-            type="text"
+          <select
             name="category"
             id="category"
-            placeholder="category"
             onChange={onValueChange}
+            required
             value={values.category}
-          />
+          >
+           <option value="">Select Category</option>
+            <option value="electronics">Electronics</option>
+            <option value="clothing">Clothing</option>
+            <option value="home">Home</option>
+            <option value="books">Books</option>
+            <option value="cosmetics">Cosmetics</option>
+            <option value="skincare">Skincare</option>
+            <option value="haircare">Haircare</option> 
+          </select>
           <input
             type="file"
             name="image"
