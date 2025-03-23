@@ -1,38 +1,52 @@
 .App {
   text-align: center;
+  background-color: #1f87e2;  /* Light blue background */
+  color: #333;  /* Dark text color */
+  padding: 20px;
 }
 
 .Title {
-  background-color: #222427;
+  background-color: linear-gradient(to right, #0c4a25, #feb47b);
   min-height: 8vh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: left;
-  font-size: calc(10px + 1vmin);
-  color: white;
+  font-size: calc(14px + 1vmin);
+  color: rgb(34, 143, 81);
+  padding: 20px;
+  border-radius: 10px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
 .Listing {
-  background-color: #222427;
+  background-color: linear-gradient(to right, #136d28, #2575fc);
   min-height: 8vh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: left;
-  font-size: calc(10px + 1vmin);
-  color: white;
+  font-size: calc(12px + 1vmin);
+  color: rgb(14, 100, 48);
+  padding: 20px;
+  border-radius: 10px;
+  margin: 20px 0;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
 .ItemList {
-  background-color: #222427;
+  background-color: linear-gradient(to right, #00c6ff, #0072ff);
   min-height: 8vh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: left;
-  font-size: calc(10px + 1vmin);
-  color: white;
+  font-size: calc(12px + 1vmin);
+  color: rgb(101, 233, 145);
+  padding: 20px;
+  border-radius: 10px;
+  margin: 20px 0;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
 .App-link {
@@ -46,4 +60,9 @@
   to {
     transform: rotate(360deg);
   }
+}
+.App-logo {
+  height: 40vmin;
+  pointer-events: none;
+  animation: App-logo-spin infinite 20s linear;
 }
