@@ -1,36 +1,34 @@
 import os
 import logging
 import pathlib
-from fastapi import FastAPI, Form, HTTPException, Depends, File, UploadFile, Path
+from fastapi import FastAPI, Form, HTTPException, Depends, File, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import sqlite3
 from pydantic import BaseModel, Field
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager
 import json
 import hashlib
 from typing import Dict, List, Optional
-import threading
+
 
 # Define the path to the images & sqlite3 database
 images = pathlib.Path(__file__).parent.resolve() / "images"
 items_file = pathlib.Path(__file__).parent.resolve() / "items.json"
-db = pathlib.Path(__file__).parent.resolve() / "db" / "mercari.sqlite3"
+db = pathlib.Path(__file__).parent.resolve() / "mercari.sqlite3"
 SQL_File = pathlib.Path(__file__).parent.resolve() / "db" / "items.sql"
 
-thread_local = threading.local()
-db_path = "db/test_mercari.sqlite3"
-@contextmanager
-def get_db():
-    if not hasattr(thread_local, 'conn'):
-        thread_local.conn = sqlite3.connect(db_path, check_same_thread=True)
-        thread_local.conn.row_factory = sqlite3.Row  # Return rows as dictionaries
 
-    conn = thread_local.conn
+def get_db():
+    if not db.exists():
+         yield
+
+    conn = sqlite3.connect(db, check_same_thread=False )
+    conn.row_factory = sqlite3.Row  # Return rows as dictionaries
     try:
         yield conn    
     finally:
-        pass
+        conn.close()
 
 ##### for STEP 4-1
 # Function to read the items from the JSON file
@@ -54,12 +52,13 @@ def hash_image(image_file: UploadFile):
         image = image_file.file.read()
         # hash the image
         hash_value = hashlib.sha256(image).hexdigest()
-        hashed_image_name = f"{hash_value}.jpg"
-        hashed_image_path = images / hashed_image_name
+        hashed_image = f"{hash_value}.jpg"
+        hashed_image_path = images / hashed_image
         
         with open(hashed_image_path, 'wb') as f:
             f.write(image)
-        return hashed_image_name
+        image_file.file.close()
+        return hashed_image
 
     except Exception as e:
         raise RuntimeError(f"An unexpected error occurred: {e}")    
@@ -87,12 +86,14 @@ def get_items_from_db(db: sqlite3.Connection):
         """
         cursor.execute(query)
         rows = cursor.fetchall()
+        logger.debug(f"Fetched rows: {rows}")
         items_list = [{"name": name, "category":category, "image_name": image_name} for name, category, image_name in rows]
         result = {"items": items_list}
 
         return result
 
     except Exception as e:
+        logger.error(f"Error fetching items: {e}")
         return {f"An unexpected error occurred: {e}"}
     finally:
         cursor.close()
@@ -102,21 +103,28 @@ def get_items_from_db(db: sqlite3.Connection):
 def get_items_from_db_by_id(id: int, db: sqlite3.Connection)-> Dict[str, List[Dict[str, str]]]:
     try:
         cursor = db.cursor()
+        logger.debug(f"Executing query to fetch item with ID: {id}")
+
         query = """
         SELECT items.id, items.name, categories.name AS category, items.image_name
         FROM items
-        JOIN categories
-        ON items.category_id = categories.id
+        JOIN categories ON items.category_id = categories.id
+        WHERE items.id = ?
         """
-        cursor.execute(query, (id,))
-        rows = cursor.fetchone()
-        
-        item = [{"id": row[0], "name": row[1], "category": row[2], "image_name": row[3]}]
-        return {"items": item}
 
+        cursor.execute(query, (id,))
+        row = cursor.fetchone()
+
+        if row:
+            logger.debug(f"Found item: {row}")
+            item = [{"id": row[0], "name": row[1], "category": row[2], "image_name": row[3]}]
+            return {"items": item}
+        else:
+            logger.debug(f"No item found for ID: {id}")
+            return {"items": []}
     except Exception as e:
-        return {f"An unexpected error occurred: {e}"}
-    
+        logger.error(f"Error during DB query: {e}")
+        return {"error": f"An unexpected error occurred: {e}"}
     finally:
         cursor.close()
 ###########  
@@ -164,13 +172,17 @@ async def add_item(
     image: UploadFile = File(...),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    if not name or not category or not image:
-        raise HTTPException(status_code=400, detail="name, category, and image are required")
+    try:
+        if not name or not category or not image:
+            raise HTTPException(status_code=400, detail="name, category, and image are required")
     
-    hashed_image = hash_image(image)
+        hashed_image = hash_image(image)
 
-    insert_item_by_db(Item(name=name, category=category, image=hashed_image), db)
-    return AddItemResponse(**{"message": f"item received: {name}, {category}, {hashed_filename}"})
+        insert_item_by_db(Item(name=name, category=category, image_name=hashed_image), db)
+        return AddItemResponse(**{"message": f"item received: {name}, {category}, {hashed_image}"})
+    except Exception as e:
+        logger.error(f"An error occurred while processing the item: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")   
 
  ###### modifying for STEP 5-1
 @app.get("/items")
@@ -181,11 +193,25 @@ def get_items(db: sqlite3.Connection = Depends(get_db)):
 
 ####### modified for STEP 5   
 @app.get("/items/{item_id}")
-def get_item_by_id(item_id, db: sqlite3.Connection = Depends(get_db)):
-    item_id_int = int(item_id)
-    all_data = get_items_from_db_by_id()
-    item = all_data["items"] [item_id_int -1]
-    return item
+def get_item_by_id(item_id: int, db: sqlite3.Connection = Depends(get_db)):
+    try:
+        logger.debug(f"Fetching item with ID: {item_id}")
+        all_data = get_items_from_db_by_id(item_id, db)
+        if isinstance(all_data, dict) and "items" in all_data:
+            items = all_data["items"]
+            if items:
+                logger.debug(f"Item found: {items[0]}")
+                return items[0]
+            else:
+                logger.debug("No items found for the given ID")
+                raise HTTPException(status_code=404, detail="Item not found")
+        else:
+            logger.error(f"Unexpected response format: {all_data}")
+            raise HTTPException(status_code=500, detail="Unexpected response format")
+    except Exception as e:
+        logger.error(f"Error fetching item: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {e}")
+                    
 ############## 
 
 ######### for STEP 5-2
@@ -194,10 +220,12 @@ def search_items_by_keyword(keyword: str, db: sqlite3.Connection = Depends(get_d
     try:
         cursor = db.cursor()
         query = """
-        SELECT name, category, image_name
+        SELECT items.name, categories.name AS category_name, items.image_name
         FROM items
-        WHERE name LIKE ?
+        JOIN categories ON items.category_id = categories.id
+        WHERE items.name LIKE ?
         """
+
         pattern = f"%{keyword}%"
         cursor.execute(query, (pattern,))
         rows = cursor.fetchall()
@@ -213,8 +241,13 @@ def search_items_by_keyword(keyword: str, db: sqlite3.Connection = Depends(get_d
 
 
 # get_image is a handler to return an image for GET /images/{filename} .
+<<<<<<< HEAD
+@app.get("/image/{image_name}")
+async def get_image(image_name: str):
+=======
 @app.get("/images/{image_name}")
 async def get_image(image_name):
+>>>>>>> 69c4d1d6121e0f7a0701680b670773c4478aa577
     # Create image path
     image = images / image_name
 
@@ -222,6 +255,7 @@ async def get_image(image_name):
         raise HTTPException(status_code=400, detail="Image path does not end with .jpg")
 
     if not image.exists():
+        
         logger.debug(f"Image not found: {image}")
         image = images / "default.jpg"
 
@@ -229,30 +263,36 @@ async def get_image(image_name):
 
 
 class Item(BaseModel):
-    id: Optional[str] = None 
+    id: Optional[str] = None
     name: str
     category: str
-    image : str
+    image_name: str
 
 
 
 def insert_item_by_db(item: Item, db: sqlite3.Connection) -> int:
-    cursor = db.cursor()
-    query_category = "SELECT id FROM categories WHERE name = ?"
-    cursor.execute(query_category, (item.category,))
-    rows = cursor.fetchone()
-    if rows is None:
-        insert_query_category = "INSERT INTO categories (name) VALUES (?)"
-        cursor.execute(insert_query_category, (item.category,))
-        category_id = cursor.lastrowid
-    else:
-        category_id = rows[0]
+    try:
+        cursor = db.cursor()
+        query_category = "SELECT id FROM categories WHERE name = ?"
+        cursor.execute(query_category, (item.category,))
+        rows = cursor.fetchone()
+        if rows is None:
+            insert_query_category = "INSERT INTO categories (name) VALUES (?)"
+            cursor.execute(insert_query_category, (item.category,))
+            category_id = cursor.lastrowid
+            print(f"Inserted new category with id {category_id}")
+        else:
+            category_id = rows[0]
+            print(f"Category {item.category} found with id {category_id}")
+        query = """
+        INSERT INTO items (name, category_id, image_name) VALUES (?, ?, ?)
+        """
+        cursor.execute(query, (item.name, category_id, item.image_name))
 
-    query = """
-INSERT INTO items (name, category_id, image_name) VALUES (?, ?, ?)
-"""
-    cursor.execute(query, (item.name, category_id, item.image))
-
-    db.commit()
-
-    cursor.close()
+        db.commit()
+        print(f"Inserted item into DB: {item.name}, {category_id}, {item.image_name}")
+    except Exception as e:
+        logger.error(f"Error inserting item into DB: {str(e)}")
+        raise RuntimeError(f"An unexpected error occurred while inserting the item: {e}")
+    finally:
+        cursor.close()
