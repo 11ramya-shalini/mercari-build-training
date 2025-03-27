@@ -1,0 +1,33 @@
+version: "3.9"
+
+services:
+  # Frontend Service (React)
+  frontend:
+    build:
+      context: ./typescript/simple-mercari-web       # Path to your frontend source
+      dockerfile: Dockerfile                         # Dockerfile for building the frontend
+    ports:
+      - "3000:3000"                                  # Expose port 3000 for frontend
+    environment:
+      - REACT_APP_API_URL=http://app:9000            # Set the backend API URL for frontend
+    depends_on:
+      - api                                           # Ensure the API is ready before frontend
+
+  # Backend API Service (Python)
+  api:
+    build:
+      context: ./python                              # Path to your backend (Python) source
+      dockerfile: Dockerfile                         # Dockerfile for building the Python API
+    ports:
+      - "9000:9000"                                  # Expose port 9000 for backend
+    environment:
+      - FRONT_URL=http://localhost:3000              # Set the frontend URL for the backend (CORS)
+    volumes:
+      - ./python/db:/app/db                          # Mount the db volume for persistent data (optional)
+      - ./python/images:/app/images                  # Mount the images volume for persistent data (optional)
+    networks:
+      - mercari_network                               # Ensure both services are on the same network
+
+networks:
+  mercari_network:
+    driver: bridge
