@@ -36,7 +36,7 @@ The following icons indicate pointers for
   /[EN](document/08-ci.en.md))
 - [*] **STEP9** (Stretch) Frontend ([JA](document/09-frontend.ja.md)
   /[EN](document/09-frontend.en.md))
-- [ ] **STEP10** (Stretch)  Run multi service ([JA](document/10-docker-compose.ja.md)
+- [*] **STEP10** (Stretch)  Run multi service ([JA](document/10-docker-compose.ja.md)
   /[EN](document/10-docker-compose.en.md))
 - [ ] **EXTRA1** (Stretch)  Data Analysis ([Link](document/extra-01-data-analysis.md))
 
