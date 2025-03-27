@@ -81,22 +81,15 @@ export const Listing = ({ onListingCompleted }: Prop) => {
             required
             value={values.name}
           />
-          <select
+          <input
+            type="text"
             name="category"
             id="category"
+            placeholder='category'
             onChange={onValueChange}
             required
             value={values.category}
-          >
-           <option value="">Select Category</option>
-            <option value="electronics">Electronics</option>
-            <option value="clothing">Clothing</option>
-            <option value="home">Home</option>
-            <option value="books">Books</option>
-            <option value="cosmetics">Cosmetics</option>
-            <option value="skincare">Skincare</option>
-            <option value="haircare">Haircare</option> 
-          </select>
+          />
           <input
             type="file"
             name="image"

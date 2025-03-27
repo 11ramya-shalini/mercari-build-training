@@ -1,19 +1,23 @@
 .App {
+  display: flex;
+  justify-content: center; /* Center content horizontally */
+  align-items: center;     /* Center content vertically */
+  min-height: 100vh;       /* Ensure full height of the screen */
   text-align: center;
-  background-color: #1f87e2;  /* Light blue background */
+  background-color: #efc20f;  
   color: #333;  /* Dark text color */
   padding: 20px;
 }
 
 .Title {
-  background-color: linear-gradient(to right, #0c4a25, #feb47b);
+  background-color: linear-gradient(to right, #ed7d0e, #feb47b);
   min-height: 8vh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: left;
   font-size: calc(14px + 1vmin);
-  color: rgb(34, 143, 81);
+  color:  rgb(175, 7, 190);
   padding: 20px;
   border-radius: 10px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
@@ -27,7 +31,7 @@
   align-items: center;
   justify-content: left;
   font-size: calc(12px + 1vmin);
-  color: rgb(14, 100, 48);
+  color: rgb(174, 33, 206);
   padding: 20px;
   border-radius: 10px;
   margin: 20px 0;
@@ -35,18 +39,42 @@
 }
 
 .ItemList {
-  background-color: linear-gradient(to right, #00c6ff, #0072ff);
-  min-height: 8vh;
+  background-color: linear-gradient(to right, #ff007b, #0072ff);
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: left;
-  font-size: calc(12px + 1vmin);
-  color: rgb(101, 233, 145);
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 20px;
   padding: 20px;
   border-radius: 10px;
-  margin: 20px 0;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  width: 100%;
+}
+
+.ItemBox {
+  background-color: lavender;  /* Lavender background color */
+  width: 200px;                /* Fixed width for all items */
+  height: 300px;               /* Fixed height for all items */
+  display: flex;               /* Flexbox to center contents */
+  flex-direction: column;
+  align-items: center;         /* Center items horizontally */
+  justify-content: center;     /* Center items vertically */
+  padding: 10px;
+  border-radius: 10px;         /* Rounded corners */
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);  /* Light shadow for effect */
+  text-align: center;
+}
+
+.ItemBox img {
+  max-width: 100%;
+  max-height: 150px;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.ItemBox p {
+  margin-top: 10px;
+  font-size: 14px;
+  color: #333;
 }
 
 .App-link {
