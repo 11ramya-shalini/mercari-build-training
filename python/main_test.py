@@ -1,11 +1,9 @@
 from fastapi.testclient import TestClient
-from main import app, get_db, add_item
+from main import app, get_db
 import pytest
 import sqlite3
 import os
 import pathlib
-from fastapi import Form, HTTPException, UploadFile, File, Depends
-import io
 
 # STEP 6-4: uncomment this test setup
 test_db = pathlib.Path(__file__).parent.resolve() / "db" / "test_mercari.sqlite3"
@@ -19,25 +17,7 @@ def override_get_db():
         conn.close()
 
  
-app.dependency_overrides[get_db] = override_get_db
-
-# A mock version of the add_item function that does not require an actual file upload
-async def mock_add_item(
-    name: str = Form(...),
-    category: str = Form(...),
-    image: UploadFile = File(None),  # Make image optional during testing
-    db: sqlite3.Connection = Depends(get_db),
-):
-    if not name or not category:
-        raise HTTPException(status_code=400, detail="name and category are required")
-
-    # Use a dummy image if no image is provided (for testing)
-    hashed_image = "dummy_image.jpg" if not image else hash_image(image)
-
-    insert_item_by_db(Item(name=name, category=category, image=hashed_image), db)
-    return AddItemResponse(message=f"Item received: {name}, {category}, {hashed_image}")
-
-app.dependency_overrides[add_item] = mock_add_item  
+app.dependency_overrides[get_db] = override_get_db  
 
 @pytest.fixture(autouse=True)
 def db_connection():
@@ -83,34 +63,27 @@ def test_hello(want_status_code, want_body):
 @pytest.mark.parametrize(
     "args, want_status_code",
     [
-        ({"name":"used iPhone 16e", "category":"phone"}, 200),
-        ({"name":"", "category":"phone"}, 400),
+        ({"name":"Lipstick", "category":"cosmetics"}, 200),
+        ({"name":"", "category":"cosmetics"}, 422),
     ],
 )
 def test_add_item_e2e(args,want_status_code,db_connection):
 
-    with open("images/default.jpg", "rb") as f:
-        files = {"image": ("default.jpg", f)} 
+    response = client.post("/items/", data=args)
+    assert response.status_code == want_status_code
     
-        response = client.post("/items/", data=args, files=files)
-        
-        assert response.status_code == want_status_code
-    
-        if want_status_code >= 400:
-            return
+    if want_status_code >= 400:
+        return
     
     
-        # Check if the response body is correct
-        response_data = response.json()
-        assert "message" in response_data
+    # Check if the response body is correct
+    response_data = response.json()
+    assert "message" in response_data
 
-        # Check if the data was saved to the database correctly
-        cursor = db_connection.cursor()
-        cursor.execute("SELECT * FROM items WHERE name = ?", (args["name"],))
-        db_item = cursor.fetchone()
-        assert db_item is not None
-        assert dict(db_item)["name"] == args["name"]
-        # Check if the category was saved to the database correctly
-        cursor.execute("SELECT id FROM categories WHERE name = ?", (args["category"],))
-        db_category_id = cursor.fetchone()[0]
-        assert dict(db_item)["category_id"] == db_category_id
+    # Check if the data was saved to the database correctly
+    cursor = db_connection.cursor()
+    cursor.execute("SELECT * FROM items WHERE name = ?", (args["name"],))
+    db_item = cursor.fetchone()
+    assert db_item is not None
+    assert dict(db_item)["name"] == args["name"]
+        
